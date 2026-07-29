@@ -1,0 +1,780 @@
+-- --fartysploitv2 made by mrfartymiq--
+
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local lp = Players.LocalPlayer
+
+-- --boulder highlight colors--
+local colors = {
+	Mossite = Color3.fromRGB(255, 60, 60),
+	Voltite = Color3.fromRGB(60, 120, 255),
+	Gildrite = Color3.fromRGB(60, 255, 100),
+	Rimeveil = Color3.fromRGB(255, 230, 60),
+	Nocturnite = Color3.fromRGB(170, 0, 255)
+}
+
+local settings = {
+	mode = "Boulders",
+	boulder = "All",
+	highlight = true,
+	names = true,
+	lines = true,
+	topValue = true,
+	topLuck = true
+}
+
+local espFolder = workspace:FindFirstChild("fartysploitESP") or Instance.new("Folder")
+espFolder.Name = "fartysploitESP"
+espFolder.Parent = workspace
+
+local objects = {}
+local scanned = {}
+
+local crystalESP = {
+	value = {model = nil, box = nil, name = nil, beam = nil, a0 = nil, a1 = nil},
+	luck = {model = nil, box = nil, name = nil, beam = nil, a0 = nil, a1 = nil}
+}
+
+local cachedBestVal, cachedBestLuck = nil, nil
+
+local function formatNumber(num)
+	if not num or num <= 0 then return "0" end
+	if num >= 1000000000 then
+		return string.format("%.1fB", num / 1000000000):gsub("%.0B", "B")
+	elseif num >= 1000000 then
+		return string.format("%.1fM", num / 1000000):gsub("%.0M", "M")
+	elseif num >= 1000 then
+		return string.format("%.1fk", num / 1000):gsub("%.0k", "k")
+	else
+		return tostring(math.floor(num))
+	end
+end
+
+local function formatWeight(kg)
+	if not kg or kg <= 0 then return "" end
+	if kg >= 1000 then
+		local tons = kg / 1000
+		local formatted = string.format("%.1f", tons):gsub("%.0$", "")
+		return (formatted == "1" and "1 ton" or formatted .. " tons")
+	else
+		local formatted = string.format("%.1f", kg):gsub("%.0$", "")
+		return formatted .. "kg"
+	end
+end
+
+local function tween(inst, props, duration)
+	TweenService:Create(inst, TweenInfo.new(duration or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function addCorners(inst, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius or 8)
+	c.Parent = inst
+	return c
+end
+
+local function getNocturniteRGB()
+	local customHue = 0.70 + (math.sin(tick() * 1.5) * 0.125 + 0.125)
+	return Color3.fromHSV(customHue, 1, 1)
+end
+
+local function getType(model)
+	for _, v in ipairs(model:GetDescendants()) do
+		if v:IsA("BasePart") then
+			local b = v.Name:match("^(.-)_cell")
+			if b and colors[b] then return b end
+		end
+	end
+end
+
+local function removeESP(model)
+	if objects[model] then
+		for _, v in ipairs(objects[model].parts) do if v then v:Destroy() end end
+		if objects[model].name then objects[model].name:Destroy() end
+		if objects[model].beam then objects[model].beam:Destroy() end
+		if objects[model].a0 then objects[model].a0:Destroy() end
+		if objects[model].a1 then objects[model].a1:Destroy() end
+		objects[model] = nil
+	end
+	scanned[model] = nil
+end
+
+local function addESP(model)
+	if scanned[model] or not model:IsA("Model") then return end
+	
+	local bType = getType(model)
+	if not bType then return end
+	scanned[model] = true
+
+	local main = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+	if not main then return end
+
+	local col = (bType == "Nocturnite") and getNocturniteRGB() or colors[bType]
+	local data = {type = bType, main = main, parts = {}}
+
+	for _, p in ipairs(model:GetDescendants()) do
+		if p:IsA("BasePart") then
+			local box = Instance.new("BoxHandleAdornment")
+			box.Adornee = p
+			box.Size = p.Size + Vector3.new(0.2, 0.2, 0.2)
+			box.Color3 = col
+			box.Transparency = 1
+			box.AlwaysOnTop = true
+			box.ZIndex = 10
+			box.Parent = espFolder
+			table.insert(data.parts, box)
+		end
+	end
+
+	local tag = Instance.new("BillboardGui")
+	tag.Adornee = main
+	tag.Size = UDim2.new(0, 140, 0, 35)
+	tag.StudsOffset = Vector3.new(0, 10, 0)
+	tag.AlwaysOnTop = true
+	tag.Enabled = false
+	tag.Parent = espFolder
+
+	local txt = Instance.new("TextLabel")
+	txt.Size = UDim2.new(1, 0, 1, 0)
+	txt.BackgroundTransparency = 1
+	txt.Text = bType
+	txt.TextSize = 16
+	txt.Font = Enum.Font.GothamBold
+	txt.TextColor3 = Color3.fromRGB(255, 255, 255)
+	txt.TextStrokeTransparency = 0.2
+	txt.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	txt.Parent = tag
+	data.name = tag
+
+	local a1 = Instance.new("Attachment")
+	a1.Parent = main
+	data.a1 = a1
+
+	local beam = Instance.new("Beam")
+	beam.Color = ColorSequence.new(col)
+	beam.Width0 = 0.08
+	beam.Width1 = 0.08
+	beam.FaceCamera = true
+	beam.Enabled = false
+	beam.Parent = espFolder
+	data.beam = beam
+
+	objects[model] = data
+
+	model.Destroying:Connect(function()
+		removeESP(model)
+	end)
+end
+
+-- --stat puller--
+local function getCrystalStats(inst)
+	local val = 0
+	local luckBoost = 0
+	local weight = 0
+
+	for _, v in ipairs(inst:GetDescendants()) do
+		if v:IsA("TextLabel") and v.Text ~= "" then
+			local text = v.Text:gsub("<[^>]->", "")
+
+			local luckMatch = text:match("Luck:%s*%+?(%d+%.?%d*)%%") or text:match("%+(%d+%.?%d*)%%")
+			if luckMatch then
+				local num = tonumber(luckMatch)
+				if num then luckBoost = math.max(luckBoost, num) end
+			end
+
+			local weightMatch = text:match("(%d+%.?%d*)%s*[kK][gG]")
+			if weightMatch then
+				local num = tonumber(weightMatch)
+				if num then weight = math.max(weight, num) end
+			end
+
+			local valMatchM = text:match("%$%s*(%d+%.?%d*)%s*[mM]")
+			if valMatchM then
+				local num = tonumber(valMatchM)
+				if num then val = math.max(val, num * 1000000) end
+			end
+		end
+	end
+
+	if luckBoost == 0 or val == 0 or weight == 0 then
+		local baseLuck = 0
+		local baseVal = 0
+
+		for _, v in ipairs(inst:GetDescendants()) do
+			if v:IsA("ValueBase") then
+				local n = v.Name:lower()
+				if type(v.Value) == "number" then
+					if n:find("luck") or n:find("boost") then baseLuck = math.max(baseLuck, v.Value) end
+					if n:find("val") or n:find("price") or n:find("worth") then baseVal = math.max(baseVal, v.Value) end
+					if n:find("kg") or n:find("weight") then weight = math.max(weight, v.Value) end
+				end
+			end
+		end
+
+		local attrs = inst:GetAttributes()
+		for name, attr in pairs(attrs) do
+			if type(attr) == "number" then
+				local n = name:lower()
+				if n:find("luck") or n:find("boost") then baseLuck = math.max(baseLuck, attr) end
+				if n:find("val") or n:find("price") or n:find("worth") then baseVal = math.max(baseVal, attr) end
+				if n:find("kg") or n:find("weight") then weight = math.max(weight, attr) end
+			end
+		end
+
+		if luckBoost == 0 then
+			luckBoost = (baseLuck > 0 and baseLuck <= 20) and (baseLuck * 100) or baseLuck
+		end
+		if val == 0 then val = baseVal end
+	end
+
+	return val, luckBoost, weight
+end
+
+-- --scanner--
+local function scanCrystals()
+	local bestValModel, bestLuckModel = nil, nil
+	local maxVal, maxLuck = -1, -1
+
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if (v:IsA("Model") or v:IsA("BasePart")) and v:IsDescendantOf(workspace) then
+			local name = v.Name:lower()
+			local isPlotOrBase = name:find("plot") or name:find("base") or name:find("tycoon") or name:find("house") or name:find("stand")
+			local isCharacter = lp.Character and v:IsDescendantOf(lp.Character)
+			
+			if not isPlotOrBase and not isCharacter then
+				local isCrystal = name:find("crystal") or name:find("gem") or name:find("ore") or name:find("infinitra")
+				if isCrystal then
+					local val, luck, weight = getCrystalStats(v)
+					if val > maxVal then
+						maxVal = val
+						bestValModel = v
+					end
+					if luck > maxLuck then
+						maxLuck = luck
+						bestLuckModel = v
+					end
+				end
+			end
+		end
+	end
+
+	return bestValModel, bestLuckModel
+end
+
+local function clearSingleCrystalESP(targetKey)
+	local entry = crystalESP[targetKey]
+	if entry.box then entry.box:Destroy() entry.box = nil end
+	if entry.name then entry.name:Destroy() entry.name = nil end
+	if entry.beam then entry.beam:Destroy() entry.beam = nil end
+	if entry.a0 then entry.a0:Destroy() entry.a0 = nil end
+	if entry.a1 then entry.a1:Destroy() entry.a1 = nil end
+	entry.model = nil
+end
+
+local function updateCrystalESP(targetKey, targetModel, color, labelText)
+	local entry = crystalESP[targetKey]
+	if not targetModel or not targetModel:IsDescendantOf(workspace) then
+		clearSingleCrystalESP(targetKey)
+		return
+	end
+
+	local main = targetModel:IsA("Model") and (targetModel.PrimaryPart or targetModel:FindFirstChildWhichIsA("BasePart", true)) or targetModel
+	if not main then clearSingleCrystalESP(targetKey) return end
+
+	local val, luck, weight = getCrystalStats(targetModel)
+	local weightStr = formatWeight(weight)
+	local weightTag = (weightStr ~= "" and (" | " .. weightStr) or "")
+
+	local statDisplay = ""
+	if targetKey == "value" then
+		statDisplay = " [$" .. formatNumber(val) .. weightTag .. "]"
+	elseif targetKey == "luck" then
+		statDisplay = " [+" .. math.floor(luck) .. "%" .. weightTag .. "]"
+	end
+
+	local isBoth = (cachedBestVal == cachedBestLuck) and (cachedBestVal == targetModel)
+	if isBoth then
+		if targetKey == "luck" then
+			clearSingleCrystalESP("luck")
+			return
+		else
+			labelText = "Most Valuable & Lucky Crystal"
+			statDisplay = " [$" .. formatNumber(val) .. weightTag .. " | +" .. math.floor(luck) .. "%]"
+			color = Color3.fromRGB(255, 140, 0)
+		end
+	end
+
+	local fullLabel = labelText .. statDisplay
+
+	if entry.model ~= targetModel then
+		clearSingleCrystalESP(targetKey)
+		entry.model = targetModel
+
+		local box = Instance.new("BoxHandleAdornment")
+		box.Adornee = main
+		box.Size = main.Size + Vector3.new(0.4, 0.4, 0.4)
+		box.Color3 = color
+		box.Transparency = 0.5
+		box.AlwaysOnTop = true
+		box.ZIndex = 10
+		box.Parent = espFolder
+		entry.box = box
+
+		local tag = Instance.new("BillboardGui")
+		tag.Adornee = main
+		tag.Size = UDim2.new(0, 320, 0, 35)
+		tag.StudsOffset = Vector3.new(0, 8, 0)
+		tag.AlwaysOnTop = true
+		tag.Parent = espFolder
+
+		local txt = Instance.new("TextLabel")
+		txt.Name = "Label"
+		txt.Size = UDim2.new(1, 0, 1, 0)
+		txt.BackgroundTransparency = 1
+		txt.Text = fullLabel
+		txt.TextSize = 16
+		txt.Font = Enum.Font.GothamBold
+		txt.TextColor3 = color
+		txt.TextStrokeTransparency = 0
+		txt.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		txt.Parent = tag
+		entry.name = tag
+
+		local a1 = Instance.new("Attachment")
+		a1.Parent = main
+		entry.a1 = a1
+
+		local beam = Instance.new("Beam")
+		beam.Color = ColorSequence.new(color)
+		beam.Width0 = 0.12
+		beam.Width1 = 0.12
+		beam.FaceCamera = true
+		beam.Parent = espFolder
+		entry.beam = beam
+	else
+		if entry.name and entry.name:FindFirstChild("Label") then
+			entry.name.Label.Text = fullLabel
+		end
+	end
+
+	local isEnabled = (settings.mode == "Crystals") and ((targetKey == "value" and settings.topValue) or (targetKey == "luck" and settings.topLuck))
+	if entry.box then entry.box.Transparency = (isEnabled and settings.highlight) and 0.4 or 1 end
+	if entry.name then entry.name.Enabled = isEnabled and settings.names end
+
+	local char = lp.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if entry.beam then
+		if isEnabled and settings.lines and root and entry.a1 then
+			if not entry.a0 or entry.a0.Parent ~= root then
+				if entry.a0 then entry.a0:Destroy() end
+				local a0 = Instance.new("Attachment")
+				a0.Parent = root
+				entry.a0 = a0
+			end
+			entry.beam.Attachment0 = entry.a0
+			entry.beam.Attachment1 = entry.a1
+			entry.beam.Enabled = true
+		else
+			entry.beam.Enabled = false
+		end
+	end
+end
+
+-- --trigger updater--
+workspace.DescendantAdded:Connect(function(desc)
+	if settings.mode == "Crystals" then
+		task.defer(function()
+			cachedBestVal, cachedBestLuck = scanCrystals()
+		end)
+	end
+end)
+
+workspace.DescendantRemoving:Connect(function(desc)
+	if settings.mode == "Crystals" and (desc == cachedBestVal or desc == cachedBestLuck) then
+		task.defer(function()
+			cachedBestVal, cachedBestLuck = scanCrystals()
+		end)
+	end
+end)
+
+-- --bck boulder scanner--
+task.spawn(function()
+	while task.wait(0.5) do
+		for _, v in ipairs(workspace:GetDescendants()) do
+			if v:IsA("Model") and not scanned[v] then
+				addESP(v)
+			end
+		end
+	end
+end)
+
+-- --ui-- --if ur reading this ur gay--
+local gui = Instance.new("ScreenGui")
+gui.Name = "Fartysploitv2"
+gui.ResetOnSpawn = false
+gui.Parent = lp:WaitForChild("PlayerGui")
+
+local scale = Instance.new("UIScale")
+scale.Parent = gui
+
+local function resize()
+	local camera = workspace.CurrentCamera
+	if camera then
+		local x = camera.ViewportSize.X
+		if x < 600 then
+			scale.Scale = 0.70
+		elseif x < 1000 then
+			scale.Scale = 0.85
+		else
+			scale.Scale = 1
+		end
+	end
+end
+resize()
+if workspace.CurrentCamera then
+	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(resize)
+end
+
+local container = Instance.new("Frame")
+container.Size = UDim2.new(0, 480, 0, 275)
+container.Position = UDim2.new(0.5, -240, 0.5, -137)
+container.BackgroundTransparency = 1
+container.Active = true
+container.Draggable = true
+container.Parent = gui
+
+local containerScale = Instance.new("UIScale")
+containerScale.Scale = 1
+containerScale.Parent = container
+
+local header = Instance.new("Frame")
+header.Size = UDim2.new(1, 0, 0, 52)
+header.Position = UDim2.new(0, 0, 0, 0)
+header.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+header.BackgroundTransparency = 0.2
+header.Parent = container
+addCorners(header, 12)
+
+local headerStroke = Instance.new("UIStroke")
+headerStroke.Color = Color3.fromRGB(0, 0, 0)
+headerStroke.Transparency = 0.3
+headerStroke.Thickness = 1.5
+headerStroke.Parent = header
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -90, 0, 22)
+title.Position = UDim2.new(0, 15, 0, 8)
+title.BackgroundTransparency = 1
+title.Text = "Fartysploitv2"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextSize = 19
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+local subtitle = Instance.new("TextLabel")
+subtitle.Size = UDim2.new(1, -90, 0, 16)
+subtitle.Position = UDim2.new(0, 15, 0, 28)
+subtitle.BackgroundTransparency = 1
+subtitle.Text = "press P to open | press Q to hide"
+subtitle.TextColor3 = Color3.fromRGB(160, 160, 175)
+subtitle.TextSize = 10
+subtitle.Font = Enum.Font.Gotham
+subtitle.TextXAlignment = Enum.TextXAlignment.Left
+subtitle.Parent = header
+
+local minimize = Instance.new("TextButton")
+minimize.Size = UDim2.new(0, 32, 0, 32)
+minimize.Position = UDim2.new(1, -75, 0, 10)
+minimize.Text = "-"
+minimize.TextSize = 22
+minimize.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+minimize.BackgroundTransparency = 0.2
+minimize.TextColor3 = Color3.fromRGB(255, 255, 255)
+minimize.Font = Enum.Font.GothamBold
+minimize.Parent = header
+addCorners(minimize, 8)
+
+local minStroke = Instance.new("UIStroke")
+minStroke.Color = Color3.fromRGB(0, 0, 0)
+minStroke.Transparency = 0.3
+minStroke.Thickness = 1.5
+minStroke.Parent = minimize
+
+local close = Instance.new("TextButton")
+close.Size = UDim2.new(0, 32, 0, 32)
+close.Position = UDim2.new(1, -38, 0, 10)
+close.Text = "X"
+close.TextSize = 16
+close.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+close.BackgroundTransparency = 0.2
+close.TextColor3 = Color3.fromRGB(255, 255, 255)
+close.Font = Enum.Font.GothamBold
+close.Parent = header
+addCorners(close, 8)
+
+local closeStroke = Instance.new("UIStroke")
+closeStroke.Color = Color3.fromRGB(0, 0, 0)
+closeStroke.Transparency = 0.3
+closeStroke.Thickness = 1.5
+closeStroke.Parent = close
+
+local body = Instance.new("Frame")
+body.Size = UDim2.new(1, 0, 0, 212)
+body.Position = UDim2.new(0, 0, 0, 62)
+body.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+body.BackgroundTransparency = 0.2
+body.Parent = container
+addCorners(body, 12)
+
+local bodyStroke = Instance.new("UIStroke")
+bodyStroke.Color = Color3.fromRGB(0, 0, 0)
+bodyStroke.Transparency = 0.3
+bodyStroke.Thickness = 1.5
+bodyStroke.Parent = body
+
+local mini = Instance.new("TextButton")
+mini.Size = UDim2.new(0, 50, 0, 50)
+mini.Position = UDim2.new(0.5, -25, 0.5, -25)
+mini.Text = "🤑"
+mini.TextSize = 34
+mini.BackgroundTransparency = 1
+mini.Active = true
+mini.Visible = false
+mini.Parent = gui
+
+local dragging, dragInput, dragStart, startPos
+mini.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = mini.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+mini.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+UIS.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		mini.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+minimize.MouseButton1Click:Connect(function()
+	tween(containerScale, {Scale = 0}, 0.25)
+	task.wait(0.25)
+	container.Visible = false
+	mini.Visible = true
+end)
+
+mini.MouseButton1Click:Connect(function()
+	if not dragging then
+		mini.Visible = false
+		container.Visible = true
+		tween(containerScale, {Scale = 1}, 0.25)
+	end
+end)
+
+close.MouseButton1Click:Connect(function()
+	tween(containerScale, {Scale = 0}, 0.25)
+	task.wait(0.25)
+	gui.Enabled = false
+	containerScale.Scale = 1
+end)
+
+local modeBtn = Instance.new("TextButton")
+modeBtn.Size = UDim2.new(0.44, 0, 0, 36)
+modeBtn.Position = UDim2.new(0, 16, 0, 16)
+modeBtn.Text = "Mode: " .. settings.mode
+modeBtn.TextSize = 13
+modeBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+modeBtn.BackgroundTransparency = 0.3
+modeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+modeBtn.Font = Enum.Font.GothamBold
+modeBtn.Parent = body
+addCorners(modeBtn, 8)
+
+local modeStroke = Instance.new("UIStroke")
+modeStroke.Color = Color3.fromRGB(0, 0, 0)
+modeStroke.Transparency = 0.5
+modeStroke.Parent = modeBtn
+
+local dropdown = Instance.new("TextButton")
+dropdown.Size = UDim2.new(0.44, 0, 0, 36)
+dropdown.Position = UDim2.new(0, 16, 0, 60)
+dropdown.Text = "Boulder: " .. settings.boulder
+dropdown.TextSize = 13
+dropdown.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+dropdown.BackgroundTransparency = 0.3
+dropdown.TextColor3 = Color3.fromRGB(220, 220, 230)
+dropdown.Font = Enum.Font.Gotham
+dropdown.Parent = body
+addCorners(dropdown, 8)
+
+local dropStroke = Instance.new("UIStroke")
+dropStroke.Color = Color3.fromRGB(0, 0, 0)
+dropStroke.Transparency = 0.6
+dropStroke.Parent = dropdown
+
+local scrollList = Instance.new("ScrollingFrame")
+scrollList.Size = UDim2.new(0.44, 0, 0, 100)
+scrollList.Position = UDim2.new(0, 16, 0, 100)
+scrollList.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+scrollList.BackgroundTransparency = 0.1
+scrollList.ScrollBarThickness = 3
+scrollList.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
+scrollList.Visible = false
+scrollList.ZIndex = 15
+scrollList.Parent = body
+addCorners(scrollList, 8)
+
+local scrollStroke = Instance.new("UIStroke")
+scrollStroke.Color = Color3.fromRGB(0, 0, 0)
+scrollStroke.Transparency = 0.5
+scrollStroke.Parent = scrollList
+
+local bTypes = {"All", "Mossite", "Voltite", "Gildrite", "Rimeveil", "Nocturnite"}
+scrollList.CanvasSize = UDim2.new(0, 0, 0, #bTypes * 26)
+
+for i, name in ipairs(bTypes) do
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -6, 0, 24)
+	btn.Position = UDim2.new(0, 3, 0, (i - 1) * 26)
+	btn.Text = name
+	btn.TextSize = 12
+	btn.BackgroundTransparency = 1
+	btn.TextColor3 = Color3.fromRGB(240, 240, 240)
+	btn.Font = Enum.Font.Gotham
+	btn.ZIndex = 16
+	btn.Parent = scrollList
+
+	btn.MouseButton1Click:Connect(function()
+		settings.boulder = name
+		dropdown.Text = "Boulder: " .. name
+		scrollList.Visible = false
+	end)
+end
+
+dropdown.MouseButton1Click:Connect(function()
+	scrollList.Visible = not scrollList.Visible
+end)
+
+modeBtn.MouseButton1Click:Connect(function()
+	settings.mode = (settings.mode == "Boulders") and "Crystals" or "Boulders"
+	modeBtn.Text = "Mode: " .. settings.mode
+	dropdown.Visible = (settings.mode == "Boulders")
+	if settings.mode == "Crystals" then scrollList.Visible = false end
+end)
+
+local function createToggle(txt, y, defaultState, callback)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(0.44, 0, 0, 32)
+	b.Position = UDim2.new(0.52, 0, 0, y)
+	b.Text = txt .. ": " .. (defaultState and "ON" or "OFF")
+	b.TextSize = 12
+	b.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+	b.BackgroundTransparency = 0.3
+	b.TextColor3 = defaultState and Color3.fromRGB(120, 255, 150) or Color3.fromRGB(200, 200, 210)
+	b.Font = Enum.Font.GothamBold
+	b.Parent = body
+	addCorners(b, 8)
+
+	local btnStroke = Instance.new("UIStroke")
+	btnStroke.Color = Color3.fromRGB(0, 0, 0)
+	btnStroke.Transparency = 0.6
+	btnStroke.Parent = b
+
+	local enabled = defaultState
+	b.MouseButton1Click:Connect(function()
+		enabled = not enabled
+		b.Text = txt .. ": " .. (enabled and "ON" or "OFF")
+		b.TextColor3 = enabled and Color3.fromRGB(120, 255, 150) or Color3.fromRGB(200, 200, 210)
+		callback(enabled)
+	end)
+	return b
+end
+
+createToggle("Highlight", 16, settings.highlight, function(v) settings.highlight = v end)
+createToggle("Lines", 52, settings.lines, function(v) settings.lines = v end)
+createToggle("Names", 88, settings.names, function(v) settings.names = v end)
+createToggle("Most Valuable", 124, settings.topValue, function(v) settings.topValue = v end)
+createToggle("Most Lucky", 160, settings.topLuck, function(v) settings.topLuck = v end)
+
+UIS.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == Enum.KeyCode.P then
+		gui.Enabled = not gui.Enabled
+	elseif input.KeyCode == Enum.KeyCode.Q then
+		gui.Enabled = false
+	end
+end)
+
+-- Real-time frame loop
+local lastUpdate = 0
+
+RunService.RenderStepped:Connect(function()
+	if tick() - lastUpdate < 0.1 then
+		return
+	end
+	lastUpdate = tick()
+
+	local char = lp.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local dynamicNocturniteColor = getNocturniteRGB()
+
+	for model, data in pairs(objects) do
+		local isBoulderMode = (settings.mode == "Boulders")
+		local active = isBoulderMode and (settings.boulder == "All" or data.type == settings.boulder)
+		local currentCol = (data.type == "Nocturnite") and dynamicNocturniteColor or colors[data.type]
+
+		for _, box in ipairs(data.parts) do
+			if box then
+				box.Color3 = currentCol
+				box.Transparency = (active and settings.highlight) and 0.55 or 1
+			end
+		end
+
+		if data.name then
+			data.name.Enabled = active and settings.names
+		end
+
+		if data.beam then
+			data.beam.Color = ColorSequence.new(currentCol)
+			if active and settings.lines and root then
+				if not data.a0 or data.a0.Parent ~= root then
+					if data.a0 then data.a0:Destroy() end
+					local a0 = Instance.new("Attachment")
+					a0.Parent = root
+					data.a0 = a0
+				end
+				data.beam.Attachment0 = data.a0
+				data.beam.Attachment1 = data.a1
+				data.beam.Enabled = true
+			else
+				data.beam.Enabled = false
+			end
+		end
+	end
+
+	if settings.mode == "Crystals" then
+		updateCrystalESP("value", cachedBestVal, Color3.fromRGB(255, 220, 0), "Most Valuable Crystal")
+		updateCrystalESP("luck", cachedBestLuck, Color3.fromRGB(0, 255, 100), "Most Lucky Crystal")
+	else
+		clearSingleCrystalESP("value")
+		clearSingleCrystalESP("luck")
+	end
+end)
