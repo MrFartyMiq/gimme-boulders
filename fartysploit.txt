@@ -285,7 +285,14 @@ local function updateCrystalESP(targetKey, targetModel, color, labelText)
 	local main = targetModel:IsA("Model") and (targetModel.PrimaryPart or targetModel:FindFirstChildWhichIsA("BasePart", true)) or targetModel
 	if not main then clearSingleCrystalESP(targetKey) return end
 
-	local val, luck, weight = getCrystalStats(targetModel)
+	local val, luck, weight
+
+if targetModel._fartyStats then
+	val, luck, weight = table.unpack(targetModel._fartyStats)
+else
+	val, luck, weight = getCrystalStats(targetModel)
+	targetModel._fartyStats = {val, luck, weight}
+end
 	local weightStr = formatWeight(weight)
 	local weightTag = (weightStr ~= "" and (" | " .. weightStr) or "")
 
@@ -385,19 +392,11 @@ local function updateCrystalESP(targetKey, targetModel, color, labelText)
 end
 
 -- --trigger updater--
-workspace.DescendantAdded:Connect(function(desc)
-	if settings.mode == "Crystals" then
-		task.defer(function()
+task.spawn(function()
+	while task.wait(3) do
+		if settings.mode == "Crystals" then
 			cachedBestVal, cachedBestLuck = scanCrystals()
-		end)
-	end
-end)
-
-workspace.DescendantRemoving:Connect(function(desc)
-	if settings.mode == "Crystals" and (desc == cachedBestVal or desc == cachedBestLuck) then
-		task.defer(function()
-			cachedBestVal, cachedBestLuck = scanCrystals()
-		end)
+		end
 	end
 end)
 
@@ -727,7 +726,7 @@ end)
 local lastUpdate = 0
 
 RunService.RenderStepped:Connect(function()
-	if tick() - lastUpdate < 0.1 then
+	if tick() - lastUpdate < 0.5 then
 		return
 	end
 	lastUpdate = tick()
